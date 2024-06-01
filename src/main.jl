@@ -147,6 +147,9 @@ function tsp_mtz(d::Matrix{Int64}, time_limit::Int)
     end
 end
 
+
+# The main function that displays the results obtained from the 1st approach and the 2nd approach so we can compare between them
+
 function main()
     all_instances = generate_instances()
     sizes = [10, 20, 30, 50, 100]
