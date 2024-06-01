@@ -33,6 +33,9 @@ function generate_instances()
     return all_instances
 end
 
+
+# Functions used for constraint generation approach 
+
 function nextCity(sol::Matrix{Int64}, start::Int64)
     n = size(sol, 1)
     for j in 1:n
@@ -60,34 +63,14 @@ function add_subtour_elimination_constraint(model, x, visited)
     @constraint(model, sum(x[visited[i], visited[j]] for i in 1:n-1 for j in 1:n-1) <= n - 2)
 end
 
-function detectSubtour_mtz(sol::Matrix{Int64})
-    n = size(sol, 1)
-    for start in 2:n
-        visited = [start]
-        next = nextCity(sol, start)
-        while next != 1 && next != start
-            push!(visited, next)
-            next = nextCity(sol, next)
-        end
-        if next == start
-            return true, visited
-        end
-    end
-    return false, []
-end
 
+# Main function for the model of the constraint generation approach 
 
-function add_subtour_elimination_constraint_mtz(model, u, tour)
-    for i in tour
-        @constraint(model, u[i] == Inf)
-    end
-end
-
-function tsp_approach1(d::Matrix{Int64}, time_limit::Int)
+function tsp_constraint(d::Matrix{Int64}, time_limit::Int)
     n = size(d, 1)
     model = Model(Cbc.Optimizer)
     set_silent(model)
-    set_optimizer_attribute(model, "seconds", time_limit)  # Set time limit
+    set_optimizer_attribute(model, "seconds", time_limit)  
     @variable(model, x[i in 1:n, j in 1:n], Bin)
     @objective(model, Min, sum(d[i, j] * x[i, j] for i in 1:n, j in 1:n))
     @constraint(model, departUnique[i in 1:n], sum(x[i, j] for j in 1:n) == 1)
@@ -105,8 +88,8 @@ function tsp_approach1(d::Matrix{Int64}, time_limit::Int)
         sol = round.(Int64, value.(x))
         existeSousTour, visited = detectSubtour(sol)
         if !existeSousTour
-            arcs_utilises = [(i, j) for i in 1:n for j in 1:n if sol[i, j] == 1]
-            return objective_value(model), true, arcs_utilises
+            arcs = [(i, j) for i in 1:n for j in 1:n if sol[i, j] == 1]
+            return objective_value(model), true, arcs
         else 
             add_subtour_elimination_constraint(model, x, visited) 
         end
@@ -117,19 +100,24 @@ function tsp_approach1(d::Matrix{Int64}, time_limit::Int)
     end
 end
 
-function tsp_approach2(d::Matrix{Int64}, time_limit::Int)
+
+# Main function for the model of the MTZ Formulation approach
+
+function tsp_mtz(d::Matrix{Int64}, time_limit::Int)
     n = size(d, 1)
     model = Model(Cbc.Optimizer)
     set_silent(model)
-    set_optimizer_attribute(model, "seconds", time_limit)  # Set time limit
+    set_optimizer_attribute(model, "seconds", time_limit)  
     @variable(model, x[i in 1:n, j in 1:n], Bin)
     @objective(model, Min, sum(d[i, j] * x[i, j] for i in 1:n, j in 1:n))
     @constraint(model, departUnique[i in 1:n], sum(x[i, j] for j in 1:n) == 1)
     @constraint(model, arriveeUnique[i in 1:n], sum(x[j, i] for j in 1:n) == 1)
     @constraint(model, sansBoucle[i in 1:n], x[i, i] == 0)
 
-    @variable(model, 1 <= u[1:n] <= n)
+    # additionnal constraints for MTZ Formulation
 
+    @variable(model, 1 <= u[1:n] <= n)
+    @constraint(model, u[1] == 1)
     for i in 2:n, j in 2:n
         @constraint(model, u[i] - u[j] + 1 <= (1 - x[i, j]) * (n))
     end
@@ -146,12 +134,10 @@ function tsp_approach2(d::Matrix{Int64}, time_limit::Int)
             return Inf, false, []
         end
         sol = round.(Int64, value.(x))
-        existeSousTour, visited = detectSubtour_mtz(sol)
+        existeSousTour, visited = detectSubtour(sol)
         if !existeSousTour
-            arcs_utilises = [(i, j) for i in 1:n for j in 1:n if sol[i, j] == 1]
-            return objective_value(model), true, arcs_utilises
-        # else
-        #     add_subtour_elimination_constraint_mtz(model,u,visited)
+            arcs = [(i, j) for i in 1:n for j in 1:n if sol[i, j] == 1]
+            return objective_value(model), true, arcs
         end
 
         elapsed_time = time() - start_time
@@ -173,7 +159,7 @@ function main()
             println("Approche 1:")
             time_output1 = TimerOutput()
             result1 = @timeit time_output1 "TSP Time" begin
-                tsp_approach1(matrix, time_limit)
+                tsp_constraint(matrix, time_limit)
             end
             distance1, optimal1, arcs1 = result1
             if optimal1
@@ -192,7 +178,7 @@ function main()
             println("Approche 2:")
             time_output2 = TimerOutput()
             result2 = @timeit time_output2 "TSP Time" begin
-                tsp_approach2(matrix, time_limit)
+                tsp_mtz(matrix, time_limit)
             end
             distance2, optimal2, arcs2 = result2
             if optimal2
